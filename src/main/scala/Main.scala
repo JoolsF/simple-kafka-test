@@ -1,81 +1,59 @@
-import scala.concurrent.ExecutionContext.Implicits.global
-import scala.concurrent.Future
-import scala.util.Random
-
 object Main extends App {
 
-  private val getNextId: () => Int = {
-    var i = 0
-    () =>
-      val next = i = i + 1
-      i
-
+  args.toList match {
+    case "prod" :: topicName :: _ =>
+      println(s"Creating new producer for topic: $topicName")
+      new ProducerRunner(topicName)
+    case "cons" :: consumerId :: topicName :: _ =>
+      println(
+        s"Creating new consumer with id $consumerId for topic: $topicName"
+      )
+      val consumer: StringConsumer =
+        new StringConsumer(s"consumer-$consumerId", 100)
+      consumer.subscribe(topicName)
+      consumer.start
+    case _ =>
+      println("Invalid input. Bye bye.")
+      System.exit(1)
   }
 
-  def nextId = getNextId()
+}
 
-  val testProducer1: StringProducer = new StringProducer("test-topic-1")
-  val consumer: StringConsumer = new StringConsumer(s"consumer-$nextId", 10)
-  consumer.subscribe("test-topic-1")
-  consumer.start
+class ProducerRunner(topicName: String) {
+
+  val testProducer1: StringProducer = new StringProducer(topicName)
+
+  import InputHelper._
 
   def runLoop(message: String, exit: Boolean = false): Unit =
     (message, exit) match {
       case (_, true) => println("Bye bye")
       case ("generate", _) =>
-        StringMessageGenerator.run(testProducer1).map { _ =>
-          val (newMessage, exit) = getNewInput()
-          runLoop(newMessage, exit)
-        }
-      case ("newConsumer", _) =>
-        val consumer: StringConsumer =
-          new StringConsumer(s"consumer-$nextId", 10)
-        consumer.subscribe("test-topic-1")
-        consumer.start
+        StringProducerGenerator.run(testProducer1)
+        Thread.sleep(4000) //This is a temporary solution!
         val (newMessage, exit) = getNewInput()
         runLoop(newMessage, exit)
-      case (msg, _) =>
+      case (msg, _) if (msg.nonEmpty) =>
         testProducer1.sendMessageAsync("key", msg)
         val (newMessage, exit) = getNewInput()
         runLoop(newMessage, exit)
-
+      case _ =>
+        val (newMessage, exit) = getNewInput()
+        runLoop(newMessage, exit)
     }
-
-  def getNewInput(): (String, Boolean) = {
-    val newMessage = scala.io.StdIn.readLine()
-    println()
-    val exit = newMessage == "exit"
-    (newMessage, exit)
-  }
 
   runLoop("")
 
-//  val testAvroProducer1 = new AvroProducer("test-customer-topic-1")
-//  testAvroProducer1.sendMessageAsync("1", Customer(1, "Julian Fenner"))
-
-  Thread.sleep(60000)
-
 }
 
-object StringMessageGenerator {
-
-  def getInt(range: Int) = scala.util.Random.nextInt(range)
-
-  def getString() = Random.alphanumeric take 8 mkString ""
-
-  def run(sp: StringProducer) = {
-    val runTimes = getInt(10)
-    Future.sequence(
-      for (_ <- 1 to runTimes) yield {
-        val sleep = getInt(500)
-        Thread.sleep(sleep)
-        val key = getInt(10000000).toString
-        val message = getString()
-        println(s"StringMessageGenerator: sending $key $message \n")
-        sp.sendMessageAsync(key, message)
-      }.map(_ => ())
-    )
-
+object InputHelper {
+  def getNewInput(): (String, Boolean) = {
+    print("\n Next instruction: ")
+    val newMessage = scala.io.StdIn.readLine()
+    println()
+    Thread.sleep(500)
+    val exit = newMessage == "exit"
+    (newMessage, exit)
   }
 
 }
